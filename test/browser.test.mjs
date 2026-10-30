@@ -117,7 +117,7 @@ test('an inactive session at the term chooser selects only the configured term',
     await context.route('https://portal.example/**', route => {
       const path = new URL(route.request().url()).pathname;
       visited.push(path);
-      const body = path === '/entry' ? '<h1>Select a Value</h1><a href="/wrong">2026 Fall</a><a href="/winter">2027 Winter</a>' :
+      const body = path === '/entry' ? '<div hidden><h1><span>Select a Value</span></h1><a href="/wrong">2027 Winter</a></div><h1><span>Select a Value</span></h1><a href="/wrong">2026 Fall</a><a href="/winter">2027 Winter</a>' :
         path === '/winter' ? '<p>2027 Winter</p><a href="/course">TEST 100</a>' :
         path === '/course' ? '<p>2027 Winter</p><a href="/details">Lecture - 1234</a>' : `<p>2027 Winter</p>${info()}`;
       return route.fulfill({ contentType: 'text/html', body });

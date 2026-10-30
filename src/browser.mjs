@@ -107,11 +107,16 @@ export async function navigateAndRead(context, config) {
     let choosingTerm = false;
     for (const candidate of context.pages()) for (const frame of candidate.frames()) {
       try {
-        if (await frame.getByText('Select a Value', { exact: true }).isVisible()) {
+        const chooserTitles = frame.getByText('Select a Value', { exact: true });
+        let chooserVisible = false;
+        for (let i = 0; i < await chooserTitles.count(); i++) if (await chooserTitles.nth(i).isVisible()) chooserVisible = true;
+        if (chooserVisible) {
           choosingTerm = true;
-          const option = frame.getByText(config.term, { exact: true });
-          if (await option.count() === 1 && await option.isVisible() && Date.now() - lastActionAt >= 3000) {
-            await option.click({ timeout: 8000 });
+          const options = frame.getByText(config.term, { exact: true });
+          const visibleOptions = [];
+          for (let i = 0; i < await options.count(); i++) if (await options.nth(i).isVisible()) visibleOptions.push(options.nth(i));
+          if (visibleOptions.length === 1 && Date.now() - lastActionAt >= 3000) {
+            await visibleOptions[0].click({ timeout: 8000 });
             lastActionAt = Date.now();
           }
         }
