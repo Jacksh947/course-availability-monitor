@@ -87,10 +87,7 @@ export async function navigateAndRead(context, config) {
   await page.goto(config.entry_url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const deadline = Date.now() + (config.navigation_timeout_ms || 60000);
   // Only information links are clicked here. No enrolment controls are used.
-  let classClicked = false;
-  let tabClicked = false;
-  let courseClicked = false;
-  let searchSubmitted = false;
+  let lastActionAt = 0;
   let authenticationSeenAt = null;
   while (Date.now() < deadline) {
     try { return await readPage(context, config); } catch { /* Wait for loading or open the information modal. */ }
@@ -113,19 +110,26 @@ export async function navigateAndRead(context, config) {
       await new Promise(resolve => setTimeout(resolve, 500));
       continue;
     }
-    if (!classClicked) classClicked = await clickVisible(context, `Lecture - ${config.class_number}`);
-    if (!classClicked && !courseClicked) courseClicked = await clickVisible(context, config.course, true);
-    if (!classClicked && !courseClicked && !searchSubmitted) {
+    // PeopleSoft can display links before its loading handlers are ready. A
+    // successful click is not proof of navigation; retry only after a cooldown.
+    if (Date.now() - lastActionAt < 3000) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      continue;
+    }
+    const clicked = await clickVisible(context, 'Class Availability') ||
+      await clickVisible(context, `Lecture - ${config.class_number}`) ||
+      await clickVisible(context, config.course, true);
+    if (clicked) lastActionAt = Date.now();
+    if (!clicked) {
       for (const candidate of context.pages()) for (const frame of candidate.frames()) {
         const search = frame.getByPlaceholder('Enter keyword e.g. course, subject, class, topic', { exact: true });
         if (await search.count() === 1 && await search.isVisible()) {
           await search.fill(config.course);
           await search.press('Enter');
-          searchSubmitted = true;
+          lastActionAt = Date.now();
         }
       }
     }
-    if (classClicked && !tabClicked) tabClicked = await clickVisible(context, 'Class Availability');
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error('navigation_not_verified');

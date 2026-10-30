@@ -95,3 +95,16 @@ test('course search fallback uses only the course-search field', async () => {
     await context.close();
   } finally { await browser.close(); }
 });
+
+test('a class-information click ignored during loading is retried', async () => {
+  const browser = await playwright().chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    await context.route('https://portal.example/**', route => route.fulfill({ contentType: 'text/html',
+      body: `<p>2027 Winter</p><a href="#" onclick="window.clicks=(window.clicks||0)+1;if(window.clicks>1)document.querySelector('section').hidden=false;return false">Lecture - 1234</a><section hidden>${info()}</section>` }));
+    const result = await navigateAndRead(context, { ...target, entry_url: 'https://portal.example/entry', navigation_timeout_ms: 12000 });
+    assert.equal(result.class_number, '1234');
+    assert.equal(await context.pages()[0].evaluate(() => window.clicks), 2);
+    await context.close();
+  } finally { await browser.close(); }
+});
