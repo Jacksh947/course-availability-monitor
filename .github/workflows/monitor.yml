@@ -22,7 +22,7 @@ jobs:
   check:
     # The schedule stays off until the owner explicitly sets MONITOR_ENABLED=true.
     if: github.event.repository.private == false && (github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -37,7 +37,9 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - name: Verify monitor code on manual runs
+        if: github.event_name == 'workflow_dispatch'
+        run: npm test
       - name: Check availability
         run: node src/check.mjs
         env:
