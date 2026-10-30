@@ -24,13 +24,13 @@ The regular checker sends the report when due. A separate lightweight hourly wor
 
 ## Free cloud design
 
-Use standard GitHub-hosted Ubuntu runners in a public repository. The workflow refuses to run in a private repository, uses no paid browser/model service, and uploads no screenshots, page captures or artifacts. Scheduling is requested at 10-minute intervals, away from the start of the hour, but GitHub may delay or drop scheduled runs. Free hosting is not an exact-time or uptime guarantee.
+Use standard GitHub-hosted Ubuntu runners in a public repository. The workflow refuses to run in a private repository, uses no paid browser/model service, and publishes no screenshots, page text or artifacts. Scheduling is requested at 10-minute intervals, away from the start of the hour, but GitHub may delay or drop scheduled runs. Free hosting is not an exact-time or uptime guarantee.
 
 The workflow remains off until the repository variable `MONITOR_ENABLED` is set to `true`. Manual checks and a test notification are available independently. Scheduling must only be enabled after a live cloud check and notification delivery have been verified.
 
 ## Privacy and notifications
 
-The public source contains no target course, account details or saved sign-in. Target settings and the initial session are supplied through repository secrets. Rolling browser state and prior observations are encrypted with AES-256-GCM before being stored on a separate `monitor-state` branch. The encryption key remains a repository secret. Public commit/run timing and generic alert issue titles remain visible.
+The public source contains no target course, account details or saved sign-in. Target settings and the initial session are supplied through repository secrets. Rolling browser state and prior observations are encrypted with AES-256-GCM before being stored on a separate `monitor-state` branch. Failed checks also store bounded page text from the configured portal in that encrypted state for troubleshooting; successful checks clear it. The encryption key remains a repository secret. Public commit/run timing and generic alert issue titles remain visible.
 
 Notifications use GitHub issues assigned to the repository owner. Their text is generic and contains no course counts or portal data. The owner must enable GitHub email or mobile notifications for assignments and confirm receipt of a test notification. If the GitHub API or runner itself fails, the in-script notification may also fail; GitHub Actions failure notifications should be enabled as an additional signal. A separate external watchdog is not included.
 
