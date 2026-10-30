@@ -12,7 +12,9 @@ Each successful check verifies the configured course, term and class number befo
 
 It alerts when waitlist room appears or increases; status changes to Waitlist; course seats appear or increase; status changes to Open; or class/waitlist capacity increases. It uses observed values rather than predicting what a fixed number of departures will do. Seats shown while status is Closed are treated as a reported opportunity, not guaranteed eligibility to enrol.
 
-Identical observations do not cause repeated alerts. If access or parsing fails, the monitor reports an interruption instead of presenting old counts as current. It never enrols, joins a waitlist, swaps or drops a class.
+Identical observations do not cause repeated alerts. A check that cannot verify availability retries up to three times in separate browsers, with short backoffs, before reporting an interruption. Each attempt starts with the last verified saved session. A successful retry stays quiet unless availability changed. Genuine sign-in prompts receive a distinct renewal alert. Old counts are never presented as current. It never enrols, joins a waitlist, swaps or drops a class.
+
+SOLUS can return an otherwise valid session to **Select a Value** after inactivity. The monitor selects only the exact configured term from that chooser, then verifies the term, course and class again. A different active term is rejected; the monitor does not read a similarly numbered class from another term.
 
 ## Five-day status reports
 
@@ -20,7 +22,7 @@ The first reporting period starts with the first cloud check. Every five elapsed
 
 If healthy checks detected no openings, the status says **Five-day update: no openings detected**. If an opening occurred and later disappeared, the report preserves that history instead of saying there were none. If checks failed, a long gap occurred, or too few checks ran, it explicitly reports incomplete monitoring. “No openings detected” describes the sampled checks, not a guarantee that no brief opening occurred between checks.
 
-The regular checker sends the report when due. A separate lightweight hourly workflow provides backup reporting if the browser job fails before it can run the checker. Both use the same concurrency lock and encrypted state to prevent duplicate reports. A GitHub outage, exhausted quota or notification-service failure can still prevent delivery; unconditional delivery cannot be guaranteed by a free hosted service. Failed report delivery preserves the reporting period for a retry.
+The regular checker sends the report when due. A separate lightweight workflow, scheduled every ten minutes between browser checks, provides backup reporting if the browser job fails before it can run the checker. It also warns once when no verified check has been recorded for over 30 minutes, unless an existing interruption has already been reported. Recovery sends a resumed notice. Both workflows use the same concurrency lock and encrypted state to prevent duplicate reports. The health workflow shares GitHub's hosting and scheduler, so an outage affecting both workflows can delay the warning as well as the checks. Unconditional delivery cannot be guaranteed by a free hosted service. Failed report delivery preserves the reporting period for a retry.
 
 ## Free cloud design
 
@@ -41,7 +43,7 @@ Only the owner should have write access to this repository: anyone able to chang
 1. Install the project dependency and browser: `npm ci --ignore-scripts`, then `npx playwright install chromium`.
 2. Keep a private configuration file outside the repository, with `login_url`, `entry_url`, `course`, `term` and `class_number`. The target values are intentionally absent from this source.
 3. Run `node src/login.mjs PRIVATE_CONFIG_PATH PRIVATE_SESSION_PATH`. Sign in manually in the separate browser and open the class's **Class Availability** tab. Return to the local **Save monitor sign-in** tab and save.
-4. Set `MONITOR_CONFIG_PATH` and `MONITOR_SESSION_PATH` to those private files, then run `node src/check.mjs --local`. Resolve any navigation error before deployment. The adapter verifies the term, opens the course from Recently Viewed or searches for its course code, and then opens the configured lecture's Class Availability tab. If the portal resets to a different term or page layout, it stops and reports an interruption.
+4. Set `MONITOR_CONFIG_PATH` and `MONITOR_SESSION_PATH` to those private files, then run `node src/check.mjs --local`. Resolve any navigation error before deployment. The adapter selects the exact configured term if SOLUS has returned to its chooser, opens the course from Recently Viewed or searches for its course code, and then opens the configured lecture's Class Availability tab. If the active term or page layout cannot be verified, it retries and reports an interruption.
 5. Review and approve publication of this generic source in a public GitHub repository.
 6. Run `node src/prepare-secrets.mjs PRIVATE_CONFIG_PATH PRIVATE_SESSION_PATH PRIVATE_SECRETS_DIRECTORY`. Upload the resulting `STATE_KEY`, `SESSION_INITIAL` and `MONITOR_CONFIG` files as repository secrets. Do not paste their contents into chat or commit them to Git.
 7. Manually run the workflow in `check` mode and verify cloud access. Then run `test_alert` and confirm an email or push arrives.

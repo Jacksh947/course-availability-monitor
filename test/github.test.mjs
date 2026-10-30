@@ -45,3 +45,22 @@ test('GitHub HTTP errors never copy response bodies into logs', async () => {
   const github = new GitHub({ repository: 'fixture/monitor', token: 'placeholder', key, fetchImpl: async () => response({ secret: 'do-not-log' }, 403) });
   await assert.rejects(() => github.load(), error => error.message === 'github_request_failed');
 });
+
+test('temporary GitHub read failures retry without repeating writes', async () => {
+  let reads = 0;
+  const waits = [];
+  const github = new GitHub({ repository: 'fixture/monitor', token: 'placeholder', key,
+    sleep: async ms => waits.push(ms), fetchImpl: async () => {
+      reads++;
+      if (reads === 1) throw new Error('private transport details');
+      if (reads === 2) return response({ private: 'never log' }, 503);
+      return response({}, 404);
+    } });
+  assert.equal(await github.load(), null);
+  assert.equal(reads, 3);
+  assert.deepEqual(waits, [1000, 2000]);
+  let writes = 0;
+  github.fetch = async () => { writes++; return response({}, 503); };
+  await assert.rejects(() => github.request('/issues', { method: 'POST', body: {} }), /github_request_failed/);
+  assert.equal(writes, 1);
+});

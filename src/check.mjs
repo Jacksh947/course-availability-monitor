@@ -1,14 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { playwright, restoreSession, captureSession, navigateAndRead } from './browser.mjs';
-import { validateSnapshot, changes } from './rules.mjs';
+import { probeAvailability } from './probe.mjs';
+import { changes } from './rules.mjs';
 import { GitHub } from './github.mjs';
 import { recordAttempt, sendDueReport } from './reports.mjs';
 
 process.umask(0o077);
 const local = process.argv.includes('--local');
-let browser;
-let context;
 let github;
 let state;
 let attemptRecorded = false;
@@ -37,18 +35,21 @@ try {
     }
   }
   if (!config.entry_url?.startsWith('https://')) throw new Error('invalid_config');
-  browser = await playwright().chromium.launch({ headless: true });
-  context = await restoreSession(browser, state.session);
-  const current = validateSnapshot(await navigateAndRead(context, config), config);
+  const probe = await probeAvailability(config, state.session, {
+    onRetry: attempt => console.log(`Availability attempt ${attempt} was inconclusive; retrying in a fresh browser.`)
+  });
+  const current = probe.snapshot;
   recordAttempt(state, { now: new Date().toISOString(), snapshot: current });
   attemptRecorded = true;
   const events = changes(state.previous, current);
   if (github && events.length) await github.notify({ kind: 'availability', generation: state.generation, fingerprint: JSON.stringify({ events, current }) });
-  if (github && state.error) await github.notify({ kind: 'recovered', generation: state.generation, fingerprint: 'recovered' });
-  state.session = await captureSession(context);
+  if (github && (state.error || state.stale_alert_for)) await github.notify({ kind: 'recovered', generation: state.generation, fingerprint: 'recovered' });
+  state.session = probe.session;
   state.previous = current;
   state.error = null;
   delete state.diagnostic;
+  delete state.failed_attempts;
+  delete state.stale_alert_for;
   state.generation += 1;
   state.checked_at = new Date().toISOString();
   if (github) await sendDueReport(state, github, state.checked_at);
@@ -64,18 +65,11 @@ try {
   if (github && state) {
     try {
       if (!attemptRecorded) recordAttempt(state, { now: new Date().toISOString() });
-      if (state.error !== code) await github.notify({ kind: 'interruption', generation: state.generation, fingerprint: code });
+      if (state.error !== code) await github.notify({ kind: code === 'authentication_required' ? 'authentication' : 'interruption', generation: state.generation, fingerprint: code });
       state.error = code;
       // Troubleshooting stays inside the encrypted state, never public logs.
-      state.diagnostic = [];
-      if (context) for (const page of context.pages()) for (const frame of page.frames()) {
-        try {
-          const url = new URL(frame.url());
-          const sameSite = url.hostname === new URL(JSON.parse(process.env.MONITOR_CONFIG).entry_url).hostname;
-          state.diagnostic.push({ origin: url.origin, path: url.pathname,
-            text: sameSite ? (await frame.locator('body').innerText()).slice(0, 8000) : '' });
-        } catch { /* Ignore detached or unavailable documents. */ }
-      }
+      state.diagnostic = error.diagnostic || [];
+      state.failed_attempts = error.attempts || 0;
       await sendDueReport(state, github, new Date().toISOString());
       // Keep the last verified session; never overwrite it with a signed-out page.
       await github.save(state);
@@ -83,7 +77,4 @@ try {
   }
   console.error(`Monitoring interrupted: ${code}.`);
   process.exitCode = 1;
-} finally {
-  if (context) await context.close().catch(() => {});
-  if (browser) await browser.close().catch(() => {});
 }

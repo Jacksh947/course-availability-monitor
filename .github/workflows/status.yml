@@ -1,10 +1,10 @@
-name: Five-day monitoring report
+name: Monitor health and five-day report
 
 on:
   workflow_dispatch:
   schedule:
     # Backup delivery still runs if the browser job fails before starting the script.
-    - cron: '23 * * * *'
+    - cron: '3,13,23,33,43,53 * * * *'
 
 permissions:
   contents: read

@@ -108,3 +108,38 @@ test('a class-information click ignored during loading is retried', async () => 
     await context.close();
   } finally { await browser.close(); }
 });
+
+test('an inactive session at the term chooser selects only the configured term', async () => {
+  const browser = await playwright().chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    const visited = [];
+    await context.route('https://portal.example/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      visited.push(path);
+      const body = path === '/entry' ? '<h1>Select a Value</h1><a href="/wrong">2026 Fall</a><a href="/winter">2027 Winter</a>' :
+        path === '/winter' ? '<p>2027 Winter</p><a href="/course">TEST 100</a>' :
+        path === '/course' ? '<p>2027 Winter</p><a href="/details">Lecture - 1234</a>' : `<p>2027 Winter</p>${info()}`;
+      return route.fulfill({ contentType: 'text/html', body });
+    });
+    assert.equal((await navigateAndRead(context, { ...target, entry_url: 'https://portal.example/entry', navigation_timeout_ms: 15000 })).class_number, '1234');
+    assert(visited.includes('/winter'));
+    assert(!visited.includes('/wrong'));
+    await context.close();
+  } finally { await browser.close(); }
+});
+
+test('a different active term is rejected without clicking a course or class', async () => {
+  const browser = await playwright().chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    const visited = [];
+    await context.route('https://portal.example/**', route => {
+      visited.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ contentType: 'text/html', body: '<p>2026 Fall</p><a href="/wrong">TEST 100</a><a href="/wrong">Lecture - 1234</a>' });
+    });
+    await assert.rejects(() => navigateAndRead(context, { ...target, entry_url: 'https://portal.example/entry', navigation_timeout_ms: 1000 }), /navigation_not_verified/);
+    assert(!visited.includes('/wrong'));
+    await context.close();
+  } finally { await browser.close(); }
+});

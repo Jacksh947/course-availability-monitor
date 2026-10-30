@@ -2,24 +2,40 @@ import { createHash } from 'node:crypto';
 import { encrypt, decrypt } from './crypto.mjs';
 
 export class GitHub {
-  constructor({ repository, token, key, fetchImpl = fetch }) {
+  constructor({ repository, token, key, fetchImpl = fetch, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository || '')) throw new Error('invalid_repository');
     this.repository = repository;
     this.token = token;
     this.key = key;
     this.fetch = fetchImpl;
+    this.sleep = sleep;
     this.root = `https://api.github.com/repos/${repository}`;
   }
 
   async request(path, { method = 'GET', body, allow404 = false } = {}) {
-    const response = await this.fetch(`${this.root}${path}`, {
+    for (let attempt = 0; attempt < 3; attempt++) {
+    let response;
+    try {
+      response = await this.fetch(`${this.root}${path}`, {
       method, redirect: 'error', signal: AbortSignal.timeout(30000),
       headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {})
     });
+    } catch {
+      if (method === 'GET' && attempt < 2) { await this.sleep(1000 * (attempt + 1)); continue; }
+      throw new Error('github_request_failed');
+    }
     if (allow404 && response.status === 404) return null;
+    if (method === 'GET' && (response.status >= 500 || response.status === 429) && attempt < 2) {
+      const retryAfter = Number(response.headers.get('Retry-After')) * 1000;
+      // Never ignore a long rate-limit backoff or retry a write blindly.
+      if (retryAfter > 10000) throw new Error('github_request_failed');
+      await this.sleep(Math.max(1000 * (attempt + 1), retryAfter || 0));
+      continue;
+    }
     if (!response.ok) throw new Error('github_request_failed');
     return response.status === 204 ? null : response.json();
+    }
   }
 
   async load() {
@@ -52,7 +68,9 @@ export class GitHub {
     if (existing.some(issue => issue.body?.includes(marker))) return false;
     const messages = {
       availability: ['Course availability changed', 'An availability or capacity change was detected for your privately configured course. Sign in to your student portal and check the class. Availability can change again before you act.'],
-      interruption: ['Course monitor needs attention', 'The monitor could not verify fresh availability. It will not report the last known counts as current. Your saved sign-in may need renewing, or the portal may be unavailable. Check the monitor with Codex before relying on it.'],
+      interruption: ['Course monitor needs attention', 'The monitor could not verify fresh availability after automatic retries in fresh browsers. The portal may be temporarily unavailable or its layout may have changed. It will continue retrying on subsequent checks and will not present old counts as current. If the interruption persists, ask Codex to inspect the failed run.'],
+      authentication: ['Course monitor: sign-in needs renewing', 'The portal still requested sign-in after automatic retries. A manual sign-in or MFA approval may be needed to renew the saved monitor session. The monitor cannot complete MFA for you. Ask Codex to help renew the saved session.'],
+      stale: ['Course monitor: checks are delayed', 'No successful availability check has been recorded for over 30 minutes. This may be a scheduling or hosting problem; it does not establish that your sign-in expired. The monitor cannot confirm current availability. Review the Actions dashboard or ask Codex to investigate.'],
       recovered: ['Course monitoring resumed', 'The monitor can verify fresh availability again.'],
       report_clear: ['Five-day update: no openings detected', 'The successful checks in the last five-day reporting period detected no waitlist or course-seat openings. Monitoring continues. Brief openings between checks can still be missed.'],
       report_openings: ['Five-day update: openings were detected', 'Waitlist or course-seat availability was detected during the last five-day reporting period. Opening alerts were handled separately. Sign in to your student portal for current availability; a previous opening may already be filled. Monitoring continues.'],

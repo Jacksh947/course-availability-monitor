@@ -74,17 +74,19 @@ export async function readPage(context, target) {
 
 async function clickVisible(context, text, linksOnly = false) {
   for (const page of context.pages()) for (const frame of page.frames()) {
+    try {
     const loc = linksOnly ? frame.getByRole('link', { name: text, exact: true }) : frame.getByText(text, { exact: true });
     for (let i = 0; i < await loc.count(); i++) {
       if (await loc.nth(i).isVisible()) { await loc.nth(i).click({ timeout: 8000 }); return true; }
     }
+    } catch { /* PeopleSoft may replace a frame while rendering. Reinspect it. */ }
   }
   return false;
 }
 
 export async function navigateAndRead(context, config) {
   const page = await context.newPage();
-  await page.goto(config.entry_url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(config.entry_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   const deadline = Date.now() + (config.navigation_timeout_ms || 60000);
   // Only information links are clicked here. No enrolment controls are used.
   let lastActionAt = 0;
@@ -100,10 +102,31 @@ export async function navigateAndRead(context, config) {
       continue;
     }
     authenticationSeenAt = null;
+    // SOLUS can reset a valid session to the term chooser after inactivity.
+    // Only select the exact configured term from that read-only chooser.
+    let choosingTerm = false;
+    for (const candidate of context.pages()) for (const frame of candidate.frames()) {
+      try {
+        if (await frame.getByText('Select a Value', { exact: true }).isVisible()) {
+          choosingTerm = true;
+          const option = frame.getByText(config.term, { exact: true });
+          if (await option.count() === 1 && await option.isVisible() && Date.now() - lastActionAt >= 3000) {
+            await option.click({ timeout: 8000 });
+            lastActionAt = Date.now();
+          }
+        }
+      } catch { /* A replacing chooser will be inspected on the next pass. */ }
+    }
+    if (choosingTerm) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      continue;
+    }
     let termVerified = false;
     for (const candidate of context.pages()) for (const frame of candidate.frames()) {
+      try {
       const term = frame.getByText(config.term, { exact: true });
       for (let i = 0; i < await term.count(); i++) if (await term.nth(i).isVisible()) termVerified = true;
+      } catch { /* Wait for replacing frames. */ }
     }
     if (!termVerified) {
       // Never search or read a different term merely because its class IDs match.

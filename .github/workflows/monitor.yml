@@ -23,7 +23,7 @@ jobs:
     # The schedule stays off until the owner explicitly sets MONITOR_ENABLED=true.
     if: github.event.repository.private == false && (github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 10
     permissions:
       contents: write
       issues: write
