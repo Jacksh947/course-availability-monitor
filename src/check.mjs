@@ -48,6 +48,7 @@ try {
   state.session = await captureSession(context);
   state.previous = current;
   state.error = null;
+  delete state.diagnostic;
   state.generation += 1;
   state.checked_at = new Date().toISOString();
   if (github) await sendDueReport(state, github, state.checked_at);
@@ -65,6 +66,16 @@ try {
       if (!attemptRecorded) recordAttempt(state, { now: new Date().toISOString() });
       if (state.error !== code) await github.notify({ kind: 'interruption', generation: state.generation, fingerprint: code });
       state.error = code;
+      // Troubleshooting stays inside the encrypted state, never public logs.
+      state.diagnostic = [];
+      if (context) for (const page of context.pages()) for (const frame of page.frames()) {
+        try {
+          const url = new URL(frame.url());
+          const sameSite = url.hostname === new URL(JSON.parse(process.env.MONITOR_CONFIG).entry_url).hostname;
+          state.diagnostic.push({ origin: url.origin, path: url.pathname,
+            text: sameSite ? (await frame.locator('body').innerText()).slice(0, 8000) : '' });
+        } catch { /* Ignore detached or unavailable documents. */ }
+      }
       await sendDueReport(state, github, new Date().toISOString());
       // Keep the last verified session; never overwrite it with a signed-out page.
       await github.save(state);
