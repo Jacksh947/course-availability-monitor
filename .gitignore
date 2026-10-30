@@ -1,0 +1,10 @@
+node_modules/
+.auth/
+.env*
+private/
+*.session.json
+*.state.json
+test-results/
+playwright-report/
+*.log
+.DS_Store

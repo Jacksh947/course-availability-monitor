@@ -1,0 +1,13 @@
+{
+  "name": "course-availability-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "login": "node src/login.mjs",
+    "check": "node src/check.mjs"
+  },
+  "dependencies": { "playwright": "1.62.1" },
+  "engines": { "node": ">=22" }
+}

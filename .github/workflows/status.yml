@@ -1,0 +1,35 @@
+name: Five-day monitoring report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Backup delivery still runs if the browser job fails before starting the script.
+    - cron: '23 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: course-monitor
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: vars.MONITOR_ENABLED == 'true' && github.event.repository.private == false
+    runs-on: ubuntu-slim
+    timeout-minutes: 2
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: node src/report-only.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STATE_KEY: ${{ secrets.STATE_KEY }}
