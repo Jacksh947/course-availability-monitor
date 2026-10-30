@@ -149,14 +149,19 @@ export async function navigateAndRead(context, config) {
       await clickVisible(context, config.course, true);
     if (clicked) lastActionAt = Date.now();
     if (!clicked) {
+      let searched = false;
       for (const candidate of context.pages()) for (const frame of candidate.frames()) {
         const search = frame.getByPlaceholder('Enter keyword e.g. course, subject, class, topic', { exact: true });
         if (await search.count() === 1 && await search.isVisible()) {
           await search.fill(config.course);
           await search.press('Enter');
           lastActionAt = Date.now();
+          searched = true;
         }
       }
+      // Selecting a term can land on View My Classes. Return to the read-only
+      // search section before looking for the configured course.
+      if (!searched && await clickVisible(context, 'Class Search and Enroll')) lastActionAt = Date.now();
     }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
