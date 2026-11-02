@@ -1,4 +1,5 @@
 name: Course availability monitor
+run-name: Course check · ${{ github.event_name == 'schedule' && 'backup schedule' || inputs.source || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -8,6 +9,11 @@ on:
         type: choice
         options: [check, fresh_check, test_alert]
         default: check
+      source:
+        description: Who requested this check
+        type: choice
+        options: [manual, external_timer]
+        default: manual
   schedule:
     # Backup only: production checks are dispatched by an external scheduler.
     - cron: '17,47 * * * *'
