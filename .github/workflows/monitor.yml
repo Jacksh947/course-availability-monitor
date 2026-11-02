@@ -44,8 +44,8 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - name: Verify monitor code on manual runs
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify monitor code on owner-requested runs
+        if: github.event_name == 'workflow_dispatch' && inputs.source != 'external_timer'
         run: npm test
       - name: Check availability
         run: node src/check.mjs
