@@ -35,7 +35,12 @@ try {
     }
   }
   if (!config.entry_url?.startsWith('https://')) throw new Error('invalid_config');
+  state.check_interval_minutes = 30;
+  const credentials = process.env.AUTH_CREDENTIALS ? JSON.parse(process.env.AUTH_CREDENTIALS) : null;
+  if (state.auth_blocked && process.env.MONITOR_MODE !== 'fresh_check') throw new Error('authentication_required');
   const probe = await probeAvailability(config, state.session, {
+    credentials,
+    forceFreshLogin: process.env.MONITOR_MODE === 'fresh_check',
     onRetry: attempt => console.log(`Availability attempt ${attempt} was inconclusive; retrying in a fresh browser.`)
   });
   const current = probe.snapshot;
@@ -47,6 +52,7 @@ try {
   state.session = probe.session;
   state.previous = current;
   state.error = null;
+  delete state.auth_blocked;
   delete state.diagnostic;
   delete state.failed_attempts;
   delete state.stale_alert_for;
@@ -54,19 +60,31 @@ try {
   state.checked_at = new Date().toISOString();
   if (github) await sendDueReport(state, github, state.checked_at);
   if (github) await github.save(state);
+  if (process.env.HEALTHCHECK_URL) {
+    // Only a fresh validated read, completed notifications and persisted state
+    // count as success. Never ping merely because a trigger was accepted.
+    const url = new URL(process.env.HEALTHCHECK_URL);
+    if (url.protocol !== 'https:' || url.hostname !== 'hc-ping.com') throw new Error('invalid_healthcheck_url');
+    const response = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('healthcheck_ping_failed');
+  }
   if (local) {
     console.log(JSON.stringify({ verified: true, snapshot: current, events }));
     // A successful local test renews the private bootstrap session.
     await writeFile(process.env.MONITOR_SESSION_PATH, JSON.stringify({ session: state.session, snapshot: current, saved_at: state.checked_at }), { mode: 0o600 });
   } else console.log(events.length ? 'Check completed; an availability notification was recorded.' : 'Check completed; no new availability signal.');
 } catch (error) {
+  const authFailure = /^(login_or_verification_rejected|unrecognized_sign_in_prompt|fresh_login_not_completed|authentication_credentials_missing|invalid_authenticator_key)$/.test(error.message);
   const known = new Set(['authentication_required', 'navigation_not_verified', 'availability_not_verified', 'term_not_verified', 'target_not_verified', 'invalid_availability', 'unrecognized_status']);
-  const code = known.has(error.message) ? error.message : 'monitor_check_failed';
+  const code = authFailure ? 'authentication_required' : known.has(error.message) ? error.message : 'monitor_check_failed';
   if (github && state) {
     try {
       if (!attemptRecorded) recordAttempt(state, { now: new Date().toISOString() });
       if (state.error !== code) await github.notify({ kind: code === 'authentication_required' ? 'authentication' : 'interruption', generation: state.generation, fingerprint: code });
       state.error = code;
+      // Stop automatic login attempts after a rejected credential or unexpected
+      // challenge. A manually requested fresh_check is required to unblock it.
+      if (authFailure) state.auth_blocked = true;
       // Troubleshooting stays inside the encrypted state, never public logs.
       state.diagnostic = error.diagnostic || [];
       state.failed_attempts = error.attempts || 0;

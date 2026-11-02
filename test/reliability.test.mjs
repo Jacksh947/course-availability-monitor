@@ -45,6 +45,29 @@ test('persistent sign-in failure exhausts bounded retries without inventing avai
   assert(browsers.every(b => !b.isConnected()));
 });
 
+test('expired sessions are renewed once and then availability is verified', async () => {
+  let authenticated = false, loginCalls = 0;
+  const result = await probeAvailability(config, session, {
+    credentials: { username: 'fixture', password: 'fixture', seed: 'fixture' },
+    authenticate: async () => { authenticated = true; loginCalls++; },
+    navigate: async () => { if (!authenticated) throw new Error('authentication_required'); return snapshot; },
+    sleep: async () => {}
+  });
+  assert.equal(loginCalls, 1);
+  assert.equal(result.snapshot.class_number, '1234');
+});
+
+test('rejected credentials stop without further browser or password attempts', async () => {
+  let loginCalls = 0;
+  await assert.rejects(() => probeAvailability(config, session, {
+    credentials: { username: 'fixture', password: 'fixture', seed: 'fixture' },
+    authenticate: async () => { loginCalls++; throw new Error('login_or_verification_rejected'); },
+    navigate: async () => { throw new Error('authentication_required'); },
+    sleep: async () => { throw new Error('must_not_retry'); }
+  }), error => error.message === 'login_or_verification_rejected' && error.attempts === 1);
+  assert.equal(loginCalls, 1);
+});
+
 test('missing checks warn early, once per gap, without claiming expired sign-in', async () => {
   const notices = [];
   const github = { notify: async n => notices.push(n) };
@@ -54,6 +77,9 @@ test('missing checks warn early, once per gap, without claiming expired sign-in'
   assert.equal(await sendStaleWarning(state, github, '2026-10-30T13:31:00Z'), false);
   assert.equal(notices[0].kind, 'stale');
   assert.equal(notices.length, 1);
+  const slower = { checked_at: '2026-10-30T12:00:00Z', check_interval_minutes: 30 };
+  assert.equal(await sendStaleWarning(slower, github, '2026-10-30T12:45:00Z'), false);
+  assert.equal(await sendStaleWarning(slower, github, '2026-10-30T13:01:00Z'), true);
   const knownFailure = { checked_at: state.checked_at, error: 'authentication_required' };
   assert.equal(await sendStaleWarning(knownFailure, github, '2026-10-30T14:00:00Z'), false);
 });

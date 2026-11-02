@@ -6,10 +6,11 @@ on:
       mode:
         description: Run a check or send a test notification
         type: choice
-        options: [check, test_alert]
+        options: [check, fresh_check, test_alert]
         default: check
   schedule:
-    - cron: '8-59/10 * * * *'
+    # Backup only: production checks are dispatched by an external scheduler.
+    - cron: '17,47 * * * *'
 
 permissions:
   contents: read
@@ -48,3 +49,5 @@ jobs:
           SESSION_INITIAL: ${{ secrets.SESSION_INITIAL }}
           MONITOR_CONFIG: ${{ secrets.MONITOR_CONFIG }}
           MONITOR_MODE: ${{ inputs.mode || 'check' }}
+          AUTH_CREDENTIALS: ${{ secrets.AUTH_CREDENTIALS }}
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
